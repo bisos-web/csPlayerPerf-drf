@@ -1,0 +1,89 @@
+#+title: csPlayerPerf-drf --- csPlayer's Performer, a Django REST API as a Capability
+#+DATE: <2026-10-18 Sun>
+#+AUTHOR: Mohsen BANAN
+#+OPTIONS: toc:3
+
+* Overview
+
+csPlayer is split into an invoker and a performer. The invoker is webCliGui (=cliGui/webCliGui=), a
+React application shown as an Astro island at =http://csPlayerUi.here/csPlayer/=
+(=bisos-web/csPlayer-webUi=).
+The performer is this repository: the Django REST API that webCliGui calls at =/api/=. It logs users in
+(JWT), lists the operations of registered libraries (=csLib=), runs submitted operations and reports
+their status.
+
+It runs as a BISOS capability: gunicorn in the asc venv (=/bisos/venv/py3/asc=), as the =csplayer=
+account, on =127.0.0.1:23001= only. It has no virtual domain of its own: csPlayerUi.here's nginx vhost
+proxies =/api/= and =/admin/= to it and serves =/static/= from its state directory.
+
+*Status (2026-10-18)*: materialized on one host through its CBM leaf; logging in through webCliGui's
+dialog on csPlayerUi.here works, and the island lists csLib's operations. Submitting an operation was
+not tried.
+
+* The Structure
+
+#+begin_example
+csPlayerPerf-drf/
+  README.org, LICENSE
+  server/               the Django project (moved here from webCliGui's server/, 2026-10-18)
+    manage.py
+    csPlayerPerf/       settings (from the environment), urls, wsgi
+    api/                the REST API, its models, management commands
+    djangoProc.spcs     development: runserver, .env, superuser CRUD (bisos.webCap's djangoProc)
+  cbm/                  the capability
+    csPlayerPerfInfo.py     the facts: account, paths, port, /etc/default/csPlayerPerf
+    csPlayerPerf-cbs.pcs    sbom + assemble + the csPlayerPerf unit
+    csPlayerPerf-sbom.pcs   account, env file, webcligui_api and csLib (editable);
+                            django-sbom.pcs and gunicorn-sbom.pcs of bisos.webCap
+    csPlayerPerf-assemble.cs  migrate, collectstatic, superuser, library registrations, restart
+    csPlayerPerf-sysd.pcs   gunicorn, one worker with threads
+    csPlayerPerf-manage.sh  manage.py as the service runs it
+#+end_example
+
+The =hereWeb/csPlayerPerf= CBM leaf in bro_rawBisos points at =cbm/csPlayerPerf-cbs.pcs=; it is walked
+before =csPlayerUi=, whose vhost proxies to it.
+
+* On a Host
+
+| What                   | Where                                                          |
+|------------------------+----------------------------------------------------------------|
+| Account                | =csplayer=, uid/gid 509 (bisos.banna.sysAccts)                 |
+| State (its home, 755)  | =/bisos/var/csPlayerPerf=                                      |
+| Database (750 dir)     | =/bisos/var/csPlayerPerf/data/db.sqlite3=                      |
+| Static files           | =/bisos/var/csPlayerPerf/static= (nginx reads it)              |
+| Operation folders      | =/bisos/var/csPlayerPerf/operationTasks= (750)                 |
+| Settings               | =/etc/default/csPlayerPerf= (root:csplayer 640, written once)  |
+| Unit                   | =csPlayerPerf.service=, gunicorn on =127.0.0.1:23001=          |
+| Superuser              | the invoking user; password in =~/credentials/django/password= |
+
+Settings come from the environment, so nothing host-specific is in the code: =DJANGO_SECRET_KEY=,
+=DEBUG_FLAG=, =CSPLAYER_ALLOWED_HOSTS=, =CSPLAYER_CSRF_TRUSTED_ORIGINS=, =CSPLAYER_DB_PATH=,
+=CSPLAYER_STATIC_ROOT=, =CSPLAYER_OPERATIONS_DIR= (csLib reads it too). Unset, each falls back to a
+development value; =server/.env= sets them for =manage.py runserver=.
+
+One gunicorn worker: the server keeps running operations in memory (=api/OperationHandling.py=), so a
+second worker would not see the first one's.
+
+* Usage
+
+#+begin_src bash
+cd /bisos/platform/sys/cbm/collective/hereWeb/csPlayerPerf && ./cbmProc.spcs -i cbm_materialize
+cbm/csPlayerPerf-assemble.cs -i fullUpdate           # after a code or model change
+cbm/csPlayerPerf-manage.sh showmigrations api
+cbm/csPlayerPerf-manage.sh register_library <name> <module> LibraryAPIImpl --description '...'
+journalctl -u csPlayerPerf -f
+curl -s -o /dev/null -w '%{http_code}\n' http://csPlayerUi.here/api/schema/   # 200
+#+end_src
+
+Django's admin is at =http://csPlayerUi.here/admin/=; the OpenAPI pages at =/api/schema/swagger-ui/=.
+
+* Known Limits
+
+- HTTP only; the refresh-token cookie is not =Secure= (=api/api.py=) until HTTPS.
+- The registered libraries are only =csLib=. =server/djangoProc.spcs= lists more
+  (=bisos.csPlayer.drf_*=); they are installed in bisos3, not in asc, so they are not registered.
+- The header's user on csPlayerUi.here stays =unset=: webCliGui holds a JWT but does not report a user.
+
+# Local Variables:
+# eval: (setq-local toc-org-max-depth 3)
+# End:

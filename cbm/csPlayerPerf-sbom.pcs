@@ -1,0 +1,168 @@
+#!/usr/bin/env python
+
+""" #+begin_org
+* Overview and Relevant Pointers
+csPlayerPerf-sbom.pcs: software bill of materials of csPlayerPerf, csPlayer's performer ---
+webCliGui's Django REST API (server/), run by gunicorn in the BISOS asc venv.
+Django and gunicorn come from bisos.webCap's django-sbom.pcs and gunicorn-sbom.pcs (sbomsList).
+This file adds what is csPlayerPerf's own: the csplayer account and its state directory,
+/etc/default/csPlayerPerf, and the operation libraries (webcligui_api, csLib) installed editable.
+The facts are in csPlayerPerfInfo.py, beside this file.
+#+end_org """
+
+from bisos import b
+from bisos.b import cs
+from bisos.b import b_io
+
+from bisos.sbom import pkgsSeed  # pkgsSeed.plantWithWhich("seedSbom.cs")
+from bisos.banna import sysAccts
+
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import csPlayerPerfInfo as info  # noqa: E402
+
+ap = pkgsSeed.aptPkg
+sbom = pkgsSeed.sbomSpec
+
+# Each func-bearing pseudo-package below is registered in aptPkgsList, so sbom_csu's
+# aptPkgs_update() calls it instead of apt-get install. It runs on *every* sbom_fullUpdate
+# and must stay idempotent. Ordering in aptPkgsList is load-bearing.
+
+
+def _bash(script: str) -> b.op.Outcome:
+    outcome = b.subProc.WOpW(invedBy=None, log=1).bash(script)
+    if outcome.isProblematic():
+        b_io.eh.badOutcome(outcome)
+    return outcome
+
+
+def csPlayerPerfAcctSetup():
+    """The csplayer account (uid/gid from bisos.banna.sysAccts) and its state directory.
+
+    The home is the state directory: the operations it runs (pipx run ...) keep their caches
+    there. It is 755 so that nginx can read static/; data/ (the database) and the operations
+    folder are 750.
+    """
+    return _bash(f"""
+set -e
+{sysAccts.useraddScript(info.acctName)}
+sudo mkdir -p {info.stateDir} {info.staticRoot} {info.dataDir} {info.operationsDir}
+sudo chown {info.acctName}:{info.acctName} {info.stateDir} {info.staticRoot} {info.dataDir} {info.operationsDir}
+sudo chmod 755 {info.stateDir} {info.staticRoot}
+sudo chmod 750 {info.dataDir} {info.operationsDir}
+""")
+
+
+def csPlayerPerfEnvSetup():
+    """/etc/default/csPlayerPerf, written only when absent (edits and the secret key survive)."""
+    return _bash(f"""
+set -e
+if [ ! -f {info.envFile} ] ; then
+    sudo tee {info.envFile} >/dev/null <<'CSPLAYERPERF_ENV_EOF'
+{info.envFileContent()}CSPLAYERPERF_ENV_EOF
+fi
+sudo chown root:{info.acctName} {info.envFile}
+sudo chmod 640 {info.envFile}
+""")
+
+
+def csPlayerPerfLibsSetup():
+    """webcligui_api and csLib, editable, into the venv. Local repos: no pp() can name them."""
+    pip = info.venv / "bin" / "pip"
+    lines = "\n".join(
+        f"""{pip} show {lib.name} 2>/dev/null | grep -qx "Editable project location: {lib}" \\
+    || {pip} install -e {lib}"""
+        for lib in info.editableLibs
+    )
+    return _bash(f"""
+set -e
+{lines}
+""")
+
+
+aptPkgsList = [
+    ap("csPlayerPerfAcctSetup", func=csPlayerPerfAcctSetup),
+    ap("csPlayerPerfEnvSetup", func=csPlayerPerfEnvSetup),    # after the account: root:csplayer 640
+    ap("csPlayerPerfLibsSetup", func=csPlayerPerfLibsSetup),
+]
+
+# Run after the packages above, by bare name (bisos.webCap's bin, on PATH). Both install into
+# /bisos/venv/py3/asc.
+sbomsList = [
+    sbom("django-sbom.pcs"),
+    sbom("gunicorn-sbom.pcs"),
+]
+
+pkgsSeed.setup(
+    aptPkgsList=aptPkgsList,
+    sbomsList=sbomsList,
+)
+
+
+####+BEGIN: b:py3:cs:cmnd/classHead :cmndName "readme" :extent "verify" :comment "Describe" :parsMand "" :parsOpt "" :argsMin 0 :argsMax 0 :pyInv ""
+""" #+begin_org
+*  _[[elisp:(blee:menu-sel:outline:popupMenu)][±]]_ _[[elisp:(blee:menu-sel:navigation:popupMenu)][Ξ]]_ [[elisp:(outline-show-branches+toggle)][|=]] [[elisp:(bx:orgm:indirectBufOther)][|>]] *[[elisp:(blee:ppmm:org-mode-toggle)][|N]]*  CmndSvc-   [[elisp:(outline-show-subtree+toggle)][||]] <<readme>>  *Describe*  =verify= ro=cli   [[elisp:(org-cycle)][| ]]
+#+end_org """
+class readme(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
+        """Describe"""
+        failed = b_io.eh.badOutcome
+        callParamsDict = {}
+        if self.invocationValidate(rtInv, cmndOutcome, callParamsDict, None).isProblematic():
+            return failed(cmndOutcome)
+####+END:
+        descriptionStr = f"""\
+** Scope: csPlayerPerf, csPlayer's performer: the Django REST API under {info.serverDir},
+   run by gunicorn on {info.listenIp}:{info.portNu}, reached through http://{info.uiFqdn}/api/
+
+** What this installs:
+  1) csPlayerPerfAcctSetup: the {info.acctName} account, uid/gid {info.acct.uid} from bisos.banna.sysAccts,
+     home {info.stateDir} (data/ for the database, static/, operationTasks/).
+  2) csPlayerPerfEnvSetup: {info.envFile} (only when absent; a fresh secret key).
+  3) csPlayerPerfLibsSetup: {", ".join(lib.name for lib in info.editableLibs)}, editable, into {info.venv}.
+  4) Through sbomsList: django-sbom.pcs and gunicorn-sbom.pcs (bisos.webCap), into {info.venv}.
+
+** What this does NOT do: migrate, collectstatic, the superuser and the library registrations
+   (csPlayerPerf-assemble.cs), nor start anything (the csPlayerPerf unit, csPlayerPerf-cbs.pcs).
+
+       csPlayerPerf-sbom.pcs -i sbom_fullUpdate\
+"""
+        print(descriptionStr)
+
+        return cmndOutcome.set(
+            opError=b.op.OpError.Success,
+            opResults=None,
+        )
+
+
+def examples_csu() -> b.op.Outcome:
+    """Common Usage Examples for this Command-Service Unit"""
+
+    cmnd = cs.examples.cmndEnter
+    literal = cs.examples.execInsert
+
+    cmndOutcome = b.op.Outcome()
+
+    cs.examples.menuChapter('*csPlayerPerf -- sbom Examples*')
+    cmnd('readme', comment=" # An overview short description")
+
+    cs.examples.menuChapter('*Installation*')
+    literal("csPlayerPerf-sbom.pcs -i sbom_fullUpdate")
+
+    cs.examples.menuChapter('*Verify Installation*')
+    literal(f"id {info.acctName}")
+    literal(f"sudo cat {info.envFile}")
+    literal(f"{info.venv}/bin/pip list 2>/dev/null | grep -i -E 'django|gunicorn|webcligui|cslib'")
+
+    cs.examples.menuChapter('*End-Of csPlayerPerf -- sbom Examples*')
+    return cmndOutcome

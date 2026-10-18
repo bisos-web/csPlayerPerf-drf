@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+""" #+begin_org
+* Overview
+csPlayerPerf-cbs.pcs: the capability of csPlayerPerf, csPlayer's performer --- webCliGui's Django REST
+API, run by gunicorn in the asc venv as the csplayer account, on 127.0.0.1:<banna csPlayerPerf>.
+- sbom:     csPlayerPerf-sbom.pcs (account, /etc/default/csPlayerPerf, webcligui_api and csLib;
+            django-sbom.pcs and gunicorn-sbom.pcs of bisos.webCap)
+- assemble: csPlayerPerf-assemble.cs (migrate, collectstatic, superuser, library registrations)
+- units:    csPlayerPerf (csPlayerPerf-sysd.pcs)
+It has no virtual domain of its own: csPlayerUi.here (bisos-web/csPlayer-webUi) proxies /api/, /admin/
+and /static/ to it, so its leaf is walked before csPlayerUi's.
+#+end_org """
+
+from bisos.capability import cba_sysd_seed
+from bisos.capability import cba_seed
+
+cbmDir = "/bisos/git/bxRepos/bisos-web/csPlayerPerf-drf/cbm"
+
+cba_seed.setup(
+    seedType="systemd",  # Extend using cba_sysd_seed.setup
+    loader=None,
+    sbom=f"{cbmDir}/csPlayerPerf-sbom.pcs",
+    assemble=f"{cbmDir}/csPlayerPerf-assemble.cs",
+    materialize=None,
+)
+
+sysdUnitsListSite = [
+    cba_sysd_seed.sysdUnit("csPlayerPerf", f"{cbmDir}/csPlayerPerf-sysd.pcs"),
+]
+
+cba_sysd_seed.setup(
+    sysdUnitsList=sysdUnitsListSite,
+)
+
+cba_sysd_seed.plantWithWhich("cba-sysd.cs")

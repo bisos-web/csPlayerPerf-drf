@@ -1,0 +1,185 @@
+#!/usr/bin/env python
+
+""" #+begin_org
+* ~[Summary]~ :: A =SpreadPlantedCmndSerce= for Processing Django Sites
+#+end_org """
+
+from bisos.b import cs
+import collections
+
+from bisos.webCap import djangoProc_seed as djangoProc_seed # noqa: F401  # type: ignore[unused-import] _atExit_
+from bisos.webCap import djangoProc_seedInfo
+from bisos.webCap import djangoProc_csu
+
+from bisos.csSeed import seedsLib
+from bisos.banna import banna_csu
+
+from bisos import b
+from bisos.b import cs
+
+from bisos.b import b_io
+
+import sys
+import pathlib
+import os
+import pwd
+
+gitClonesBaseDir = "/bisos/git/bxRepos/cliGui"
+here = pathlib.Path.cwd()
+userName = pwd.getpwuid(os.getuid()).pw_name
+
+djangoProc_seedInfo.setup(
+    examplesFuncsList=[lambda: examples_spcs(),],  # lambda is for forward reference
+    webVirtualDomain="csPlayerPerf.here",
+    dev_webPortNu=int(banna_csu.bannaTcpPortNuOf().pyCmnd(argsList=["csPlayerPerf_dev"],).results)
+)
+
+
+
+
+def examples_spcs() -> None:
+    #od = collections.OrderedDict
+    cmnd = cs.examples.cmndEnter
+    literal = cs.examples.execInsert
+    csName = seedsLib.seededCsxuInfo.seedOfThisPlant
+
+    cs.examples.menuChapter(f'*Seed Extensions*')
+    literal(f"echo running={sys.argv[0]} csName={csName}")
+
+    cs.examples.menuSection(f'*Database Superuser CRUD*')
+
+    literal(f"mkdir -p ~/credentials/django && echo somePassWord > ~/credentials/django/password")
+    literal(f"manage.py superuserCreate --username bystar --email bystar@example.com --password=$(cat ~/credentials/django/password)")
+    literal(f"manage.py superuserRead")
+    literal(f"manage.py superuserUpdate --username bystar --email bystar@example.com --password=$(cat ~/credentials/django/password)")
+    literal(f"manage.py superuserDelete --username bystar")
+
+    cs.examples.menuSection(f'*Register csLib*')
+    cmnd('bxDjango_regCsPlayerLibs')
+    literal(f"manage.py register_library csLib csLib LibraryAPIImpl --description  'Command Services Library'")
+    literal(f"manage.py register_library static  bisos.csPlayer.drf_csPlayer_static LibraryAPIImpl --description  'A Static CSXU Library For Testing'")
+    literal(f"manage.py register_library pip:bisos3  bisos.csPlayer.drf_csPlayer_pipBisos3 LibraryAPIImpl --description  'pip bisos3 CSXUs'")
+    literal(f"manage.py register_library pip:dev-bisos3  bisos.csPlayer.drf_csPlayer_pipDevBisos3 LibraryAPIImpl --description  'pip dev-bisos3 CSXUs'")
+    literal(f"manage.py register_library pipx  bisos.csPlayer.drf_csPlayer_pipx LibraryAPIImpl --description  'pipx Packages and CSXUs'")
+    literal(f"manage.py register_library modules:facter  bisos.csPlayer.drf_modPlayer_facter LibraryAPIImpl --description  'CSXU Modules for facterModule.cs'")
+    literal(f"manage.py register_library modules:soncli  bisos.csPlayer.drf_modPlayer_soncli LibraryAPIImpl --description  'Uploadable Modules for soncli.cs'")
+
+    cs.examples.menuSection(f'*Deployment*')
+    literal("../cbm/csPlayerPerf-cbs.pcs  # the capability: account, venv, gunicorn unit (installed, as csplayer)")
+
+    cs.examples.menuSection(f'*Planted Commands*')
+    cmnd('dotEnv')
+    literal("cat .env")
+    cmnd('dotEnv', wrapper="rm .env ; ", comment="# Create .env with DEBUG_FLAG=True for development")
+    cmnd('bxDjango_NOTES')
+    cmnd('bxDjango_report')
+    literal(f"(pushd {gitClonesBaseDir}/webCliGui/webcligui_api && pip install -e .)")
+    literal(f"(pushd {gitClonesBaseDir}/csLib && pip install -e .)")
+
+
+class bxDjango_NOTES(cs.Cmnd):
+    cmndParamsMandatory = []; cmndParamsOptional = []; cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self, rtInv: cs.RtInvoker, cmndOutcome: b.op.Outcome,) -> b.op.Outcome:
+
+        NOTES = """
+* Initial Setup
+** Follow /Database Superuser CRUD/ and setup a password for django database
+        cat ~/credentials/django/password
+** Deployment -- ../cbm/csPlayerPerf-cbs.pcs (cbs_materialize); this file is for development
+
+* Run Server in Dev Mode
+** Run: python manage.py runserver 23501
+** Visit: http://localhost:23501/admin
+
+* Register  bisos.csPlayer.drf_csPlayer_xxx
+** Run:  {sys.argv[0]} -i bxDjango_regCsPlayerLibs
+
+
+        """
+
+        print(f"{NOTES}")
+
+        return(cmndOutcome)
+
+class bxDjango_regCsPlayerLibs(cs.Cmnd):
+    cmndParamsMandatory = []; cmndParamsOptional = []; cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self, rtInv: cs.RtInvoker, cmndOutcome: b.op.Outcome,) -> b.op.Outcome:
+
+        if b.subProc.WOpW(invedBy=self, log=1).bash(
+                f"""\
+manage.py register_library csLib csLib LibraryAPIImpl --description  'Command Services Library'
+manage.py register_library static  bisos.csPlayer.drf_csPlayer_static LibraryAPIImpl --description  'A Static CSXU Library For Testing'
+manage.py register_library pip:bisos3  bisos.csPlayer.drf_csPlayer_pipBisos3 LibraryAPIImpl --description  'pip bisos3 CSXUs'
+manage.py register_library pip:dev-bisos3  bisos.csPlayer.drf_csPlayer_pipDevBisos3 LibraryAPIImpl --description  'pip dev-bisos3 CSXUs'
+manage.py register_library pipx  bisos.csPlayer.drf_csPlayer_pipx LibraryAPIImpl --description  'pipx Packages and CSXUs'
+manage.py register_library modules:facter  bisos.csPlayer.drf_modPlayer_facter LibraryAPIImpl --description  'CSXU Modules for facterModule.cs'
+manage.py register_library modules:soncli  bisos.csPlayer.drf_modPlayer_soncli LibraryAPIImpl --description  'Uploadable Modules for soncli.cs'
+""",
+        ).isProblematic():  return(b_io.eh.badOutcome(cmndOutcome))
+
+
+
+        return(cmndOutcome)
+
+
+
+
+class bxDjango_report(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
+
+        if b.subProc.WOpW(invedBy=self, log=1).bash(
+                f"""\
+result=$(pip list 2> /dev/null | grep webcligui_api)
+if [ -z "$result" ] ; then
+     echo "Missing webcligui_api"
+else
+     echo $result
+fi
+result=$(pip list 2> /dev/null | grep csLib)
+if [ -z "$result" ] ; then
+     echo "Missing csLib"
+else
+     echo $result
+fi
+manage.py superuserRead
+""",
+        ).isProblematic():  return(b_io.eh.badOutcome(cmndOutcome))
+
+        return(cmndOutcome)
+
+class dotEnv(cs.Cmnd):
+    cmndParamsMandatory = [ ]
+    cmndParamsOptional = [ ]
+    cmndArgsLen = {'Min': 0, 'Max': 0,}
+
+    @cs.track(fnLoc=True, fnEntry=True, fnExit=True)
+    def cmnd(self,
+             rtInv: cs.RtInvoker,
+             cmndOutcome: b.op.Outcome,
+    ) -> b.op.Outcome:
+        """Create a .env containing -- DEBUG_FLAG=True -- if .env does not exist."""
+
+        envFilePath = pathlib.Path(".env")
+        
+        if envFilePath.exists():
+            print(f'.env already exists at {envFilePath}')
+            return cmndOutcome
+        
+        # Create .env with DEBUG_FLAG=True
+        # envFilePath.parent.mkdir(parents=True, exist_ok=True)
+        envFilePath.write_text("DEBUG_FLAG=True\n")
+        
+        print(f'.env created successfully at {envFilePath}')
+        return cmndOutcome
